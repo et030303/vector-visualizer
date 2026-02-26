@@ -50,7 +50,6 @@ function mouseWheel(event) {
     return false;
 }
 
-// --- [합 / 차] 왼쪽 패널 ---
 function renderLeftPanel() {
     if (step === 0) {
         if (sA && eA) drawArrow(sA, eA, color(255,100,100), "A");
@@ -64,18 +63,14 @@ function renderLeftPanel() {
         let curSB = p5.Vector.lerp(sB, originL, animProgress);
 
         push(); translate(originL.x, originL.y); scale(zoom); translate(-originL.x, -originL.y);
-        
-        // 평행사변형 가이드 (합 모드 step 4일 때)
         if (mode === 'ADD' && step === 4) {
             stroke(255, 100); strokeWeight(1); drawingContext.setLineDash([5, 5]);
             line(originL.x + vA.x, originL.y + vA.y, originL.x + vA.x + vB.x, originL.y + vA.y + vB.y);
             line(originL.x + vB.x, originL.y + vB.y, originL.x + vA.x + vB.x, originL.y + vA.y + vB.y);
             drawingContext.setLineDash([]);
         }
-
         drawArrow(curSA, p5.Vector.add(curSA, vA), color(255,100,100, 150), "A");
         drawArrow(curSB, p5.Vector.add(curSB, vB), color(100,100,255, 150), "B");
-
         if (step === 4) {
             let resColor = (mode === 'ADD') ? color(200,0,255) : color(0,200,100);
             if (mode === 'ADD') drawArrow(originL, p5.Vector.add(originL, p5.Vector.add(vA, vB)), resColor, "A+B");
@@ -85,7 +80,6 @@ function renderLeftPanel() {
     }
 }
 
-// --- [합 / 차] 오른쪽 패널 ---
 function renderRightPanel() {
     if (!offsetR) return;
     let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
@@ -110,7 +104,6 @@ function renderRightPanel() {
     pop();
 }
 
-// --- [내적] 렌더링 ---
 function renderDotProduct() {
     if (step === 0) {
         if (sA && eA) drawArrow(sA, eA, color(255,100,100), "A");
@@ -119,27 +112,15 @@ function renderDotProduct() {
     }
     if (!offsetL) calculateOffsets();
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
-    let angleB = vB.heading();
-    let angleA = vA.heading();
-    let theta = angleA - angleB;
+    let angleB = vB.heading(), theta = vA.heading() - angleB;
 
-    // Panel 1: 왼쪽 (각도 정확도 개선)
+    // Panel 1: 왼쪽 (각도 표시 제거)
     push();
     let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
-    translate(originL.x, originL.y);
-    scale(zoom);
-    rotate(lerp(0, -angleB, animProgress)); // B를 바닥으로 돌리는 애니메이션
-    
+    translate(originL.x, originL.y); scale(zoom);
+    rotate(lerp(0, -angleB, animProgress));
     drawArrow(createVector(0,0), vA, color(255,100,100, 150), "A");
     drawArrow(createVector(0,0), vB, color(100,100,255, 150), "B");
-    
-    if (animProgress >= 0.99) {
-        noFill(); stroke(255, 180); strokeWeight(1.5);
-        // 벡터 사이의 사잇각을 arc로 표현
-        arc(0, 0, 50, 50, min(0, theta), max(0, theta));
-        fill(255); noStroke(); 
-        text("θ", 40 * cos(theta/2), 40 * sin(theta/2));
-    }
     pop();
 
     if (animProgress < 1) animProgress += 0.02; else if (step === 1) step = 2;
@@ -167,12 +148,16 @@ function renderDotProduct() {
         if (!showComponent) drawActionBtn("성분 분해 (A1, A2)", width*0.75, height-60, () => showComponent = true);
         else if (!showResult) drawActionBtn("내적 결과 계산", width*0.75, height-60, () => { showResult = true; step = 4; });
         if (showResult) {
-            let aMag = (vA.mag()/10).toFixed(1), bMag = (vB.mag()/10).toFixed(1), cosT = cos(theta).toFixed(2), aProj = (rotVA.x/10).toFixed(1), res = ((vB.mag()/10) * (rotVA.x/10)).toFixed(1);
-            fill(40, 240); rect(width*0.75-225, height-210, 450, 130, 15);
+            let aMag = (vA.mag()/10).toFixed(1), bMag = (vB.mag()/10).toFixed(1);
+            let cosVal = cos(theta).toFixed(1); // cos세타 근삿값 (소수 첫째자리)
+            let aProj = (rotVA.x/10).toFixed(1);
+            let res = ((vB.mag()/10) * (rotVA.x/10)).toFixed(1);
+            fill(40, 240); rect(width*0.75-235, height-210, 470, 130, 15);
             fill(255); textAlign(LEFT); textSize(14);
-            text(`1. 공식: A·B = |A||B|cosθ`, width*0.75-200, height-180);
-            text(`2. 성분: |B| × (A의 B방향 성분 A2)`, width*0.75-200, height-155);
-            textSize(18); fill(0, 255, 255); text(`= ${bMag} × (${aMag} × ${cosT}) = ${bMag} × ${aProj} = ${res}`, width*0.75-200, height-120);
+            text(`1. 공식: A·B = |A||B|cosθ`, width*0.75-210, height-180);
+            text(`2. 대입: ${aMag} × ${bMag} × ${cosVal}`, width*0.75-210, height-155);
+            textSize(17); fill(0, 255, 255); 
+            text(`= ${bMag} × (A의 B방향 성분 A2) = ${bMag} × ${aProj} = ${res}`, width*0.75-210, height-120);
             textAlign(CENTER);
         }
     }
@@ -182,8 +167,7 @@ function calculateOffsets() {
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     if (mode === 'DOT') {
         offsetL = createVector(0, 0); 
-        let rotVA = vA.copy().rotate(-vB.heading());
-        let rotVB = vB.copy().rotate(-vB.heading());
+        let rotVA = vA.copy().rotate(-vB.heading()), rotVB = vB.copy().rotate(-vB.heading());
         offsetR = createVector(-(rotVA.x + rotVB.x) / 4, -rotVA.y / 2);
     } else {
         let ptsL = [createVector(0,0), vA, vB, p5.Vector.add(vA, vB)];
