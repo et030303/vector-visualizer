@@ -1,8 +1,8 @@
 let mode = 'NONE';
-let step = 0; // 0:그리기, 1:이동애니메이션, 2:B조작, 3:변환버튼대기, 4:결과완료
+let step = 0; 
 let sA, eA, sB, eB;
 let mS; 
-let isDragging = false, isSnapped = false, isReversed = false;
+let isDragging = false, isReversed = false;
 let offsetL, offsetR; 
 let animProgress = 0;
 let isPanning = false; 
@@ -26,7 +26,7 @@ function draw() {
 
     if (step === 4) {
         fill(150); noStroke(); textSize(12);
-        text("각 칸을 드래그하여 시점을 이동해보세요 (Panning)", width/2, height - 20);
+        text("마우스 드래그로 각 칸의 시점을 자유롭게 이동해보세요", width/2, height - 20);
     }
 }
 
@@ -45,7 +45,6 @@ function calculateSeparateOffsets() {
     let pointsR = [createVector(0,0), vA, p5.Vector.add(vA, vB), p5.Vector.add(vA, p5.Vector.mult(vB, -1))];
     offsetR = getCenterOffset(pointsR);
     
-    // 오른쪽 A의 시점에 B의 시점을 초기화
     mS = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
 }
 
@@ -87,11 +86,16 @@ function renderRightPanel() {
     
     drawArrow(originR, targetA, color(255,100,100), "A");
 
-    // 자석 효과: B의 시점이 A의 종점에 닿으면 고정
+    // 조작 중 자석 효과
     if (step === 2 && dist(mS.x, mS.y, targetA.x, targetA.y) < 15) {
         mS.set(targetA.x, targetA.y); 
         isDragging = false; 
         step = (mode === 'SUB') ? 3 : 4; 
+    }
+
+    // 결과 고정 단계에서도 mS가 targetA와 일치하도록 보정 (Panning 대응)
+    if (step >= 3 && (mode === 'ADD' || step === 4)) {
+        mS.set(targetA.x, targetA.y);
     }
 
     let currentVB = isReversed ? p5.Vector.mult(vB, -1) : vB;
@@ -116,7 +120,7 @@ function renderRightPanel() {
 function drawGuide(t) {
     let blink = abs(sin(frameCount*0.15))*255;
     stroke(255,255,0,blink); noFill(); ellipse(t.x, t.y, 25, 25);
-    fill(255,255,0); noStroke(); text("B의 시점을 A의 끝점으로!", width*0.75, height-40);
+    fill(255,255,0); noStroke(); text("B를 A의 종점으로!", width*0.75, height-40);
 }
 
 function drawActionBtn(txt) {
@@ -130,10 +134,7 @@ function mousePressed() {
     if (step === 0 && eA && eB) {
         if (mouseX > width/4-60 && mouseX < width/4+60 && mouseY > height-70 && mouseY < height-30) { step = 1; animProgress = 0; return; }
     }
-    if (step === 3) {
-        let bx = width*0.75-70, by = height-60;
-        if (mouseX > bx && mouseX < bx+140 && mouseY > by && mouseY < by+40) { isReversed = true; step = 4; return; }
-    }
+    if (step === 3 && mouseX > width*0.75-70 && mouseX < width*0.75+70 && mouseY > height-60 && mouseY < height-20) { isReversed = true; step = 4; return; }
     
     if (step === 0 && mouseX < width/2) {
         if (!sA) { sA = createVector(mouseX, mouseY); eA = sA.copy(); }
@@ -160,15 +161,8 @@ function mouseDragged() {
     } else if (isPanning && step === 4) {
         let dx = mouseX - pmouseX;
         let dy = mouseY - pmouseY;
-        let moveVec = createVector(dx, dy);
-        
-        if (mouseX < width/2) {
-            offsetL.add(moveVec);
-        } else {
-            offsetR.add(moveVec);
-            // 핵심 수정: 시점을 이동할 때 B의 시점(mS)도 같이 이동시켜야 모양이 안 깨짐
-            mS.add(moveVec); 
-        }
+        if (mouseX < width/2) offsetL.add(createVector(dx, dy));
+        else offsetR.add(createVector(dx, dy));
     }
 }
 
@@ -176,7 +170,7 @@ function mouseReleased() { isDragging = false; isPanning = false; }
 function drawNextButton() { fill(40,180,100); rect(width/4-60, height-70, 120, 40, 5); fill(255); text("다음 단계 ➔", width/4, height-50); }
 
 window.changeMode = function(m) { resetSimulation(); mode = m; }
-window.resetSimulation = function() { sA=eA=sB=eB=mS=offsetL=offsetR=null; step=0; isSnapped=isReversed=false; animProgress=0; mode='NONE'; }
+window.resetSimulation = function() { sA=eA=sB=eB=mS=offsetL=offsetR=null; step=0; isReversed=false; animProgress=0; mode='NONE'; }
 
 function drawArrow(v1, v2, c, label) {
     stroke(c); fill(c); strokeWeight(3); line(v1.x, v1.y, v2.x, v2.y);
