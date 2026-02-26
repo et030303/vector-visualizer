@@ -2,22 +2,179 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Vector Visualizer</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
     <style>
-        body { margin: 0; display: flex; flex-direction: column; align-items: center; background: #f0f0f0; }
-        #ui-panel { padding: 10px; background: #fff; width: 100%; display: flex; justify-content: center; gap: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
-        button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; background: #333; color: white; transition: 0.2s; }
-        button:hover { background: #555; }
-        canvas { box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-top: 20px; }
+        body { margin: 0; display: flex; flex-direction: column; align-items: center; background: #222; color: white; font-family: sans-serif; }
+        #ui-layer { padding: 15px; display: flex; gap: 10px; background: #333; width: 100%; justify-content: center; }
+        button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 5px; background: #555; color: white; font-weight: bold; }
+        button:hover { background: #777; }
+        button.active { background: #007bff; }
+        #next-btn { background: #28a745; display: none; }
+        canvas { margin-top: 10px; border: 1px solid #444; }
     </style>
 </head>
 <body>
-    <div id="ui-panel">
-        <button onclick="setMode('add')">합 (Addition)</button>
-        <button onclick="setMode('sub')">차 (Subtraction)</button>
-        <button onclick="resetCanvas()">리셋 (R)</button>
-    </div>
-    <script src="sketch.js"></script>
+
+<div id="ui-layer">
+    <button onclick="setMode('ADD')" id="btn-ADD">합 (+)</button>
+    <button onclick="setMode('SUB')" id="btn-SUB">차 (-)</button>
+    <button onclick="setMode('DOT')" id="btn-DOT">내적 (·)</button>
+    <button onclick="resetAll()" style="background:#dc3545;">리셋</button>
+    <button id="next-btn" onclick="nextStep()">다음 단계 ➔</button>
+</div>
+
+<script>
+let mode = 'NONE';
+let step = 0; // 0: 그리기, 1: 시점합치기(애니메이션/대기), 2: 조작/완성
+let sA, eA, sB, eB;
+let mS, mE; // 조작용 벡터 (moveable)
+let isDragging = false;
+let isSnapped = false;
+
+function setup() {
+    createCanvas(1000, 500);
+}
+
+function draw() {
+    background(30);
+    drawPanels();
+
+    if (mode === 'NONE') {
+        fill(150); textAlign(CENTER); text("상단 버튼을 눌러 연산을 선택하세요", width/2, height/2);
+        return;
+    }
+
+    // 왼쪽 칸 (결과/시점통일)
+    drawLeftPanel();
+    // 오른쪽 칸 (조작/과정)
+    drawRightPanel();
+}
+
+function drawPanels() {
+    stroke(60); line(width/2, 0, width/2, height);
+    noStroke(); fill(100); textSize(14);
+    text("PANEL 1: 결과 및 시점 통일", width/4, 25);
+    text("PANEL 2: 조작 및 과정", width*0.75, 25);
+}
+
+function drawLeftPanel() {
+    let origin = createVector(width/4, height/2);
+    if (step >= 1) {
+        let vA = p5.Vector.sub(eA, sA);
+        let vB = p5.Vector.sub(eB, sB);
+        drawArrow(origin, p5.Vector.add(origin, vA), color(255, 100, 100), "A");
+        drawArrow(origin, p5.Vector.add(origin, vB), color(100, 100, 255), "B");
+        
+        if (isSnapped) {
+            if (mode === 'ADD') drawArrow(origin, p5.Vector.add(origin, p5.Vector.add(vA, vB)), color(200, 0, 255), "Result");
+            if (mode === 'SUB') drawArrow(origin, p5.Vector.add(origin, p5.Vector.sub(vA, vB)), color(0, 200, 100), "Result");
+        }
+    }
+}
+
+function drawRightPanel() {
+    push();
+    if (step === 0) {
+        if (sA && eA) drawArrow(sA, eA, color(255, 100, 100), "A");
+        if (sB && eB) drawArrow(sB, eB, color(100, 100, 255), "B");
+    } else if (step >= 1) {
+        drawArrow(sA, eA, color(255, 100, 100), "A");
+        
+        // --- 조작 로직 ---
+        if (mode === 'ADD') {
+            if (dist(mS.x, mS.y, eA.x, eA.y) < 20) {
+                mS.set(eA.x, eA.y); mE = p5.Vector.add(mS, p5.Vector.sub(eB, sB));
+                isSnapped = true;
+                drawArrow(sA, mE, color(200, 0, 255), "A+B");
+            }
+        } else if (mode === 'SUB') {
+            // A를 B의 종점으로 이동
+            if (dist(mS.x, mS.y, eB.x, eB.y) < 20) {
+                mS.set(eB.x, eB.y); mE = p5.Vector.add(mS, p5.Vector.sub(eA, sA));
+                isSnapped = true;
+                // -B 시각화 및 결과
+                let minusB_E = p5.Vector.add(mS, p5.Vector.sub(sB, eB));
+                drawArrow(mS, minusB_E, color(100, 100, 255), "-B");
+                drawArrow(eB, p5.Vector.add(eB, p5.Vector.sub(eA, sA)), color(0, 200, 100), "A-B");
+            }
+        } else if (mode === 'DOT') {
+            // 시점 일치 후 수직/평행 분해
+            mS.set(sA.x, sA.y); mE.set(sA.x + (eB.x-sB.x), sA.y + (eB.y-sB.y));
+            isSnapped = true;
+            drawProjection(sA, eA, mE);
+        }
+        drawArrow(mS, mE, color(100, 100, 255, 150), mode === 'SUB' ? "A(moved)" : "B");
+        if (!isSnapped) { fill(0, 255, 0); ellipse(mS.x, mS.y, 10, 10); }
+    }
+    pop();
+}
+
+function drawProjection(baseS, baseE, targetE) {
+    let vA = p5.Vector.sub(baseE, baseS);
+    let vB = p5.Vector.sub(targetE, baseS);
+    let proj = vA.copy().normalize().mult(vB.dot(vA) / vA.mag());
+    let pPoint = p5.Vector.add(baseS, proj);
+    
+    stroke(255, 200); drawingContext.setLineDash([5, 5]);
+    line(targetE.x, targetE.y, pPoint.x, pPoint.y);
+    drawingContext.setLineDash([]);
+    
+    fill(255, 165, 0); noStroke();
+    text("평행성분: " + round(proj.mag()/10), pPoint.x, pPoint.y + 20);
+    text("수직성분: 0", (targetE.x + pPoint.x)/2, (targetE.y + pPoint.y)/2);
+}
+
+function setMode(m) {
+    resetAll(); mode = m;
+    document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-'+m).classList.add('active');
+}
+
+function nextStep() {
+    step = 1;
+    mS = sB.copy(); mE = eB.copy();
+    if(mode === 'SUB') { mS = sA.copy(); mE = eA.copy(); }
+    document.getElementById('next-btn').style.display = 'none';
+}
+
+function resetAll() {
+    sA = eA = sB = eB = mS = mE = null;
+    step = 0; isSnapped = false; isDragging = false;
+    document.getElementById('next-btn').style.display = 'none';
+}
+
+function mousePressed() {
+    if (mode === 'NONE') return;
+    if (step === 0) {
+        if (!sA) sA = createVector(mouseX, mouseY);
+        else if (eA && !sB) sB = createVector(mouseX, mouseY);
+    } else if (step === 1 && mS) {
+        if (dist(mouseX, mouseY, mS.x, mS.y) < 30) isDragging = true;
+    }
+}
+
+function mouseDragged() {
+    if (step === 0) {
+        if (sA && !eA) eA = createVector(mouseX, mouseY);
+        else if (sB && !eB) eB = createVector(mouseX, mouseY);
+    } else if (isDragging) {
+        let dx = mouseX - mS.x; let dy = mouseY - mS.y;
+        mS.add(dx, dy); mE.add(dx, dy);
+    }
+}
+
+function mouseReleased() {
+    isDragging = false;
+    if (step === 0 && eB) document.getElementById('next-btn').style.display = 'block';
+}
+
+function drawArrow(v1, v2, c, label) {
+    stroke(c); fill(c); strokeWeight(3);
+    line(v1.x, v1.y, v2.x, v2.y);
+    push(); translate(v2.x, v2.y); rotate(atan2(v1.y-v2.y, v1.x-v2.x));
+    line(0,0,12, -5); line(0,0,12, 5); pop();
+    noStroke(); text(label + " (" + round(dist(v1.x,v1.y,v2.x,v2.y)/10) + ")", (v1.x+v2.x)/2, (v1.y+v2.y)/2 - 10);
+}
+</script>
 </body>
 </html>
