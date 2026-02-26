@@ -4,7 +4,7 @@ let sA, eA, sB, eB;
 let mSPercent = 0; 
 let isDragging = false, isReversed = false, isPanning = false;
 let offsetL, offsetR; 
-let animProgress = 0, zoom = 1.0; // 확대/축소 변수 추가
+let animProgress = 0, zoom = 1.0;
 
 let showComponent = false, showResult = false;
 
@@ -23,36 +23,31 @@ function draw() {
         return;
     }
 
-    push(); // 전체 줌 적용 시작
     if (mode === 'DOT') renderDotProduct();
     else {
         renderLeftPanel();
         if (step >= 2) renderRightPanel();
     }
-    pop();
 
     if (step === 0) {
         if (sA && eA && sB && eB) drawNextButton();
-        else { fill(200, 150, 0); noStroke(); text("왼쪽 칸에 벡터 A와 B를 그려주세요 (휠로 확대/축소 가능)", width/2, height - 30); }
+        else { fill(200, 150, 0); noStroke(); text("왼쪽 칸에 벡터를 그려주세요 (휠: 확대/축소, 완료 후 드래그: 이동)", width/2, height - 30); }
     }
 }
 
 function drawLayout() {
-    stroke(60); strokeWeight(1);
-    line(width/2, 0, width/2, height);
+    stroke(60); strokeWeight(1); line(width/2, 0, width/2, height);
     noStroke(); fill(100); textSize(13);
     text(mode === 'DOT' ? "PANEL 1: 시점 통일 및 회전" : "PANEL 1: 최종 결과", width/4, 25);
     text(mode === 'DOT' ? "PANEL 2: 성분 분해 및 계산" : "PANEL 2: 연산 과정", width*0.75, 25);
     text(`Zoom: ${floor(zoom * 100)}%`, width - 60, 25);
 }
 
-// --- 마우스 휠 확대/축소 ---
 function mouseWheel(event) {
     let zoomSpeed = 0.05;
-    if (event.delta > 0) zoom -= zoomSpeed;
-    else zoom += zoomSpeed;
-    zoom = constrain(zoom, 0.2, 5.0); // 최소 20% ~ 최대 500%
-    return false; // 페이지 스크롤 방지
+    if (event.delta > 0) zoom -= zoomSpeed; else zoom += zoomSpeed;
+    zoom = constrain(zoom, 0.2, 5.0);
+    return false;
 }
 
 function renderLeftPanel() {
@@ -62,16 +57,12 @@ function renderLeftPanel() {
     } else {
         if (!offsetL) calculateOffsets();
         if (animProgress < 1) animProgress += 0.04; else if (step === 1) step = 2;
-        
         let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
         let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
         let curSA = p5.Vector.lerp(sA, originL, animProgress);
         let curSB = p5.Vector.lerp(sB, originL, animProgress);
 
-        push();
-        translate(originL.x, originL.y);
-        scale(zoom);
-        translate(-originL.x, -originL.y);
+        push(); translate(originL.x, originL.y); scale(zoom); translate(-originL.x, -originL.y);
         drawArrow(curSA, p5.Vector.add(curSA, vA), color(255,100,100, 150), "A");
         drawArrow(curSB, p5.Vector.add(curSB, vB), color(100,100,255, 150), "B");
         pop();
@@ -91,18 +82,12 @@ function renderRightPanel() {
     let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     let targetA = p5.Vector.add(originR, vA);
-    
-    push();
-    translate(originR.x, originR.y);
-    scale(zoom);
-    translate(-originR.x, -originR.y);
-    
+    push(); translate(originR.x, originR.y); scale(zoom); translate(-originR.x, -originR.y);
     drawArrow(originR, targetA, color(255,100,100), "A");
     let currentMS = p5.Vector.lerp(originR, targetA, mSPercent);
     if (step === 2 && mSPercent > 0.98) { mSPercent = 1; isDragging = false; step = (mode === 'SUB') ? 3 : 4; }
     let currentVB = isReversed ? p5.Vector.mult(vB, -1) : vB;
     let currentEB = p5.Vector.add(currentMS, currentVB);
-
     if (mode === 'ADD') {
         if (step === 2) drawGuide(targetA);
         drawArrow(currentMS, currentEB, color(100,100,255), "B");
@@ -122,38 +107,34 @@ function renderDotProduct() {
         if (sB && eB) drawArrow(sB, eB, color(100,100,255), "B");
         return;
     }
+    if (!offsetL) calculateOffsets();
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     let theta = vA.heading() - vB.heading();
     let angleB = vB.heading();
 
-    // Panel 1: 왼쪽
+    // Panel 1
     push();
-    translate(width/4, height/2);
+    let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
+    translate(originL.x, originL.y);
     scale(zoom);
     rotate(lerp(0, -angleB, animProgress));
-    let centerFix = p5.Vector.add(vA, vB).mult(-0.25 * animProgress);
-    translate(centerFix.x, centerFix.y);
+    // 회전 후 시점(0,0)은 고정, 벡터만 렌더링
     drawArrow(createVector(0,0), vA, color(255,100,100, 150), "A");
     drawArrow(createVector(0,0), vB, color(100,100,255, 150), "B");
-    if (animProgress >= 1) { // 애니메이션 끝난 후 각도 표시
-        noFill(); stroke(255, 180); strokeWeight(1.5);
-        arc(0, 0, 50, 50, min(0, theta), max(0, theta));
+    if (animProgress >= 0.99) {
+        noFill(); stroke(255, 180); arc(0, 0, 50, 50, min(0, theta), max(0, theta));
         fill(255); noStroke(); text("θ", 35 * cos(theta/2), 35 * sin(theta/2));
     }
     pop();
 
     if (animProgress < 1) animProgress += 0.02; else if (step === 1) step = 2;
 
-    // Panel 2: 오른쪽
+    // Panel 2
     if (step >= 2) {
-        if (!offsetR) calculateOffsets();
         let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
         let rotVA = vA.copy().rotate(-angleB);
         let rotVB = vB.copy().rotate(-angleB);
-        
-        push();
-        translate(originR.x, originR.y);
-        scale(zoom);
+        push(); translate(originR.x, originR.y); scale(zoom);
         drawArrow(createVector(0,0), rotVB, color(100,100,255), "B");
         fill(120, 120, 255); noStroke(); text(`|B|=${(vB.mag()/10).toFixed(1)}`, rotVB.x / 2, 25);
         if (showComponent) {
@@ -167,7 +148,6 @@ function renderDotProduct() {
         }
         drawArrow(createVector(0,0), rotVA, color(255,100,100), "A");
         pop();
-
         if (!showComponent) drawActionBtn("성분 분해 (A1, A2)", width*0.75, height-60, () => showComponent = true);
         else if (!showResult) drawActionBtn("내적 결과 계산", width*0.75, height-60, () => { showResult = true; step = 4; });
         if (showResult) {
@@ -185,9 +165,9 @@ function renderDotProduct() {
 function calculateOffsets() {
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     if (mode === 'DOT') {
+        offsetL = createVector(0, 0); 
         let rotVA = vA.copy().rotate(-vB.heading());
         let rotVB = vB.copy().rotate(-vB.heading());
-        // 시점을 살짝 왼쪽으로 밀어 전체 뭉치가 중앙에 오게 함
         offsetR = createVector(-(rotVA.x + rotVB.x) / 4, -rotVA.y / 2);
     } else {
         let ptsL = [createVector(0,0), vA, vB];
@@ -226,10 +206,10 @@ function mouseDragged() {
     } else if (isDragging && step === 2) {
         let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
         let vA = p5.Vector.sub(eA, sA);
-        let relM = p5.Vector.sub(createVector(mouseX/zoom, mouseY/zoom), originR); // 줌 보정
+        let relM = p5.Vector.sub(createVector(mouseX/zoom, mouseY/zoom), originR);
         mSPercent = constrain(relM.dot(vA.copy().normalize()) / vA.mag(), 0, 1);
     } else if (isPanning && step === 4) {
-        let dx = (mouseX - pmouseX), dy = (mouseY - pmouseY);
+        let dx = mouseX - pmouseX, dy = mouseY - pmouseY;
         if (mouseX < width/2) offsetL.add(createVector(dx, dy)); else offsetR.add(createVector(dx, dy));
     }
 }
@@ -238,8 +218,7 @@ function mouseReleased() { isDragging = false; isPanning = false; }
 
 function drawArrow(v1, v2, c, label, labelOffset = -15) {
     if (!v1 || !v2) return;
-    stroke(c); fill(c); strokeWeight(3 / zoom); // 줌에 따라 선 두께 조절
-    line(v1.x, v1.y, v2.x, v2.y);
+    stroke(c); fill(c); strokeWeight(3 / zoom); line(v1.x, v1.y, v2.x, v2.y);
     let angle = atan2(v1.y-v2.y, v1.x-v2.x);
     push(); translate(v2.x, v2.y); rotate(angle); line(0,0,10/zoom,-4/zoom); line(0,0,10/zoom,4/zoom); pop();
     noStroke(); fill(c); textSize(14 / zoom);
@@ -247,14 +226,14 @@ function drawArrow(v1, v2, c, label, labelOffset = -15) {
     text(label, labelPos.x, labelPos.y);
 }
 
-function drawNextButton() { fill(40,180,100); rect(width/4-60, height-70, 120, 40, 5); fill(255); textSize(15); text("다음 단계 ➔", width/4, height-50); }
+function drawNextButton() { fill(40,180,100); rect(width/4-60, height-70, 120, 40, 5); fill(255); text("다음 단계 ➔", width/4, height-50); }
 
 function drawActionBtn(txt, x, y, callback) {
     let bx = x-80, by = y-20;
     if (mouseX > bx && mouseX < bx+160 && mouseY > by && mouseY < by+40) {
         fill(255, 180, 0); if (mouseIsPressed) { callback(); mouseIsPressed = false; }
     } else fill(255, 150, 0);
-    rect(bx, by, 160, 40, 8); fill(255); noStroke(); textSize(15); text(txt, x, y);
+    rect(bx, by, 160, 40, 8); fill(255); noStroke(); text(txt, x, y);
 }
 
 function drawGuide(t) {
