@@ -5,7 +5,7 @@ let mS;
 let isDragging = false, isSnapped = false, isReversed = false;
 let offsetL, offsetR; 
 let animProgress = 0;
-let isPanning = false; // 시점 이동 모드 확인
+let isPanning = false; 
 
 function setup() {
     let canvas = createCanvas(1000, 600);
@@ -24,7 +24,6 @@ function draw() {
     if (step === 0 && eA && eB) drawNextButton();
     if (step >= 2) renderRightPanel();
 
-    // 조작 가이드 안내
     if (step === 4) {
         fill(150); noStroke(); textSize(12);
         text("각 칸을 드래그하여 시점을 이동해보세요 (Panning)", width/2, height - 20);
@@ -42,8 +41,11 @@ function calculateSeparateOffsets() {
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     let pointsL = [createVector(0,0), vA, vB];
     offsetL = getCenterOffset(pointsL);
+    
     let pointsR = [createVector(0,0), vA, p5.Vector.add(vA, vB), p5.Vector.add(vA, p5.Vector.mult(vB, -1))];
     offsetR = getCenterOffset(pointsR);
+    
+    // 오른쪽 A의 시점에 B의 시점을 초기화
     mS = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
 }
 
@@ -82,10 +84,13 @@ function renderRightPanel() {
     let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
     let targetA = p5.Vector.add(originR, vA);
+    
     drawArrow(originR, targetA, color(255,100,100), "A");
 
+    // 자석 효과: B의 시점이 A의 종점에 닿으면 고정
     if (step === 2 && dist(mS.x, mS.y, targetA.x, targetA.y) < 15) {
-        mS.set(targetA.x, targetA.y); isDragging = false; 
+        mS.set(targetA.x, targetA.y); 
+        isDragging = false; 
         step = (mode === 'SUB') ? 3 : 4; 
     }
 
@@ -102,13 +107,16 @@ function renderRightPanel() {
         if (step === 3) drawActionBtn("-B로 만들기");
         if (step === 4) drawArrow(originR, currentEB, color(0,200,100), "A+(-B)");
     }
-    if (step === 2) { fill(100,100,255); noStroke(); ellipse(mS.x, mS.y, 12, 12); }
+    
+    if (step === 2) { 
+        fill(100,100,255); noStroke(); ellipse(mS.x, mS.y, 12, 12); 
+    }
 }
 
 function drawGuide(t) {
     let blink = abs(sin(frameCount*0.15))*255;
     stroke(255,255,0,blink); noFill(); ellipse(t.x, t.y, 25, 25);
-    fill(255,255,0); noStroke(); text("B의 시점을 A의 종점으로!", width*0.75, height-40);
+    fill(255,255,0); noStroke(); text("B의 시점을 A의 끝점으로!", width*0.75, height-40);
 }
 
 function drawActionBtn(txt) {
@@ -122,7 +130,10 @@ function mousePressed() {
     if (step === 0 && eA && eB) {
         if (mouseX > width/4-60 && mouseX < width/4+60 && mouseY > height-70 && mouseY < height-30) { step = 1; animProgress = 0; return; }
     }
-    if (step === 3 && mouseX > width*0.75-70 && mouseX < width*0.75+70 && mouseY > height-60 && mouseY < height-20) { isReversed = true; step = 4; return; }
+    if (step === 3) {
+        let bx = width*0.75-70, by = height-60;
+        if (mouseX > bx && mouseX < bx+140 && mouseY > by && mouseY < by+40) { isReversed = true; step = 4; return; }
+    }
     
     if (step === 0 && mouseX < width/2) {
         if (!sA) { sA = createVector(mouseX, mouseY); eA = sA.copy(); }
@@ -130,7 +141,7 @@ function mousePressed() {
     } else if (step === 2 && dist(mouseX, mouseY, mS.x, mS.y) < 50) {
         isDragging = true;
     } else if (step === 4) {
-        isPanning = true; // 완료 후 드래그 시 시점 이동 활성화
+        isPanning = true; 
     }
 }
 
@@ -147,13 +158,16 @@ function mouseDragged() {
         let relM = p5.Vector.sub(createVector(mouseX, mouseY), originR);
         mS = p5.Vector.add(originR, dir.mult(constrain(relM.dot(dir), 0, dMag)));
     } else if (isPanning && step === 4) {
-        // 시점 이동(Panning) 로직
         let dx = mouseX - pmouseX;
         let dy = mouseY - pmouseY;
-        if (mouseX < width/2) { // 왼쪽 칸 이동
-            offsetL.add(createVector(dx, dy));
-        } else { // 오른쪽 칸 이동
-            offsetR.add(createVector(dx, dy));
+        let moveVec = createVector(dx, dy);
+        
+        if (mouseX < width/2) {
+            offsetL.add(moveVec);
+        } else {
+            offsetR.add(moveVec);
+            // 핵심 수정: 시점을 이동할 때 B의 시점(mS)도 같이 이동시켜야 모양이 안 깨짐
+            mS.add(moveVec); 
         }
     }
 }
