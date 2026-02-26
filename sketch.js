@@ -1,7 +1,7 @@
 let mode = 'NONE';
 let step = 0; 
 let sA, eA, sB, eB;
-let mS; 
+let mSPercent = 0; // mS의 위치를 A벡터의 0(시점)~1(종점) 사이 비율로 저장
 let isDragging = false, isReversed = false;
 let offsetL, offsetR; 
 let animProgress = 0;
@@ -45,7 +45,7 @@ function calculateSeparateOffsets() {
     let pointsR = [createVector(0,0), vA, p5.Vector.add(vA, vB), p5.Vector.add(vA, p5.Vector.mult(vB, -1))];
     offsetR = getCenterOffset(pointsR);
     
-    mS = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
+    mSPercent = 0; // 시작 시 A의 시점에 위치
 }
 
 function getCenterOffset(pts) {
@@ -86,34 +86,32 @@ function renderRightPanel() {
     
     drawArrow(originR, targetA, color(255,100,100), "A");
 
-    // 조작 중 자석 효과
-    if (step === 2 && dist(mS.x, mS.y, targetA.x, targetA.y) < 15) {
-        mS.set(targetA.x, targetA.y); 
+    // mS의 현재 좌표를 비율(mSPercent)로부터 실시간 계산 (이게 핵심!)
+    let currentMS = p5.Vector.lerp(originR, targetA, mSPercent);
+
+    // 자석 효과
+    if (step === 2 && mSPercent > 0.95) {
+        mSPercent = 1;
         isDragging = false; 
         step = (mode === 'SUB') ? 3 : 4; 
     }
 
-    // 결과 고정 단계에서도 mS가 targetA와 일치하도록 보정 (Panning 대응)
-    if (step >= 3 && (mode === 'ADD' || step === 4)) {
-        mS.set(targetA.x, targetA.y);
-    }
-
     let currentVB = isReversed ? p5.Vector.mult(vB, -1) : vB;
-    let currentEB = p5.Vector.add(mS, currentVB);
+    let currentEB = p5.Vector.add(currentMS, currentVB);
 
     if (mode === 'ADD') {
         if (step === 2) drawGuide(targetA);
-        drawArrow(mS, currentEB, color(100,100,255), "B");
+        drawArrow(currentMS, currentEB, color(100,100,255), "B");
         if (step === 4) drawArrow(originR, currentEB, color(200,0,255), "A+B");
     } else {
         if (step === 2) drawGuide(targetA);
-        drawArrow(mS, currentEB, color(100,100,255), isReversed ? "-B" : "B");
+        drawArrow(currentMS, currentEB, color(100,100,255), isReversed ? "-B" : "B");
         if (step === 3) drawActionBtn("-B로 만들기");
         if (step === 4) drawArrow(originR, currentEB, color(0,200,100), "A+(-B)");
     }
     
     if (step === 2) { 
-        fill(100,100,255); noStroke(); ellipse(mS.x, mS.y, 12, 12); 
+        fill(100,100,255); noStroke(); ellipse(currentMS.x, currentMS.y, 12, 12); 
     }
 }
 
@@ -139,8 +137,12 @@ function mousePressed() {
     if (step === 0 && mouseX < width/2) {
         if (!sA) { sA = createVector(mouseX, mouseY); eA = sA.copy(); }
         else if (!sB) { sB = createVector(mouseX, mouseY); eB = sB.copy(); }
-    } else if (step === 2 && dist(mouseX, mouseY, mS.x, mS.y) < 50) {
-        isDragging = true;
+    } else if (step === 2) {
+        // 현재 mS 위치 근처인지 확인
+        let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
+        let targetA = p5.Vector.add(originR, p5.Vector.sub(eA, sA));
+        let currentMS = p5.Vector.lerp(originR, targetA, mSPercent);
+        if (dist(mouseX, mouseY, currentMS.x, currentMS.y) < 50) isDragging = true;
     } else if (step === 4) {
         isPanning = true; 
     }
@@ -153,11 +155,15 @@ function mouseDragged() {
         else if (sB) eB.set(cx, mouseY);
     } else if (isDragging && step === 2) {
         let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
-        let targetA = p5.Vector.add(originR, p5.Vector.sub(eA, sA));
+        let vA = p5.Vector.sub(eA, sA);
+        let targetA = p5.Vector.add(originR, vA);
+        
+        // 마우스 위치를 비율(0~1)로 변환하여 저장
         let dir = p5.Vector.sub(targetA, originR);
-        let dMag = dir.mag(); dir.normalize();
+        let dMag = dir.mag();
         let relM = p5.Vector.sub(createVector(mouseX, mouseY), originR);
-        mS = p5.Vector.add(originR, dir.mult(constrain(relM.dot(dir), 0, dMag)));
+        let sp = relM.dot(dir.normalize());
+        mSPercent = constrain(sp / dMag, 0, 1); 
     } else if (isPanning && step === 4) {
         let dx = mouseX - pmouseX;
         let dy = mouseY - pmouseY;
@@ -170,7 +176,7 @@ function mouseReleased() { isDragging = false; isPanning = false; }
 function drawNextButton() { fill(40,180,100); rect(width/4-60, height-70, 120, 40, 5); fill(255); text("다음 단계 ➔", width/4, height-50); }
 
 window.changeMode = function(m) { resetSimulation(); mode = m; }
-window.resetSimulation = function() { sA=eA=sB=eB=mS=offsetL=offsetR=null; step=0; isReversed=false; animProgress=0; mode='NONE'; }
+window.resetSimulation = function() { sA=eA=sB=eB=null; mSPercent=0; offsetL=offsetR=null; step=0; isReversed=false; animProgress=0; mode='NONE'; }
 
 function drawArrow(v1, v2, c, label) {
     stroke(c); fill(c); strokeWeight(3); line(v1.x, v1.y, v2.x, v2.y);
