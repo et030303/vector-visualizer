@@ -1,7 +1,7 @@
 let mode = 'NONE';
-let step = 0; // 0: 왼쪽에서 그리기, 1: 시점합치기(왼쪽), 2: 오른쪽에서 조작
-let sA, eA, sB, eB;
-let mS, mE; // 오른쪽 조작용 벡터
+let step = 0; // 0: 그리기, 1: 조작 단계
+let sA, eA, sB, eB; 
+let mS, mE; // 조작용 벡터
 let isDragging = false;
 let isSnapped = false;
 
@@ -12,161 +12,168 @@ function setup() {
 }
 
 function draw() {
-    background(25);
+    background(20);
     drawLayout();
 
     if (mode === 'NONE') {
-        fill(100); textSize(20);
+        fill(150); textSize(20);
         text("상단 메뉴에서 연산을 선택하세요", width/2, height/2);
         return;
     }
 
-    // --- PANEL 1 (왼쪽: 그리기 및 시점 합치기) ---
+    // --- PANEL 1 (좌측) ---
     renderLeftPanel();
+    if (step === 0 && eA && eB) drawNextButton();
 
-    // --- PANEL 2 (오른쪽: 실제 조작) ---
+    // --- PANEL 2 (우측) ---
     if (step >= 1) renderRightPanel();
 }
 
 function drawLayout() {
-    stroke(80); strokeWeight(2);
-    line(width/2, 0, width/2, height); // 중앙 가이드선
-    noStroke(); fill(150); textSize(14);
-    text("PANEL 1: 벡터 그리기 및 시점 통합", width/4, 30);
-    text("PANEL 2: 조작 및 연산 과정", width*0.75, 30);
+    stroke(60); strokeWeight(2);
+    line(width/2, 0, width/2, height);
+    noStroke(); fill(100); textSize(13);
+    text("PANEL 1: 결과 및 시점 통합", width/4, 25);
+    text("PANEL 2: 조작 및 가이드", width*0.75, 25);
 }
 
 function renderLeftPanel() {
-    let centerLeft = createVector(width/4, height/2);
-
     if (step === 0) {
-        // [단계 0] 사용자가 그린 위치 그대로 표시
         if (sA && eA) drawArrow(sA, eA, color(255, 100, 100), "A");
         if (sB && eB) drawArrow(sB, eB, color(100, 100, 255), "B");
     } else {
-        // [단계 1 이상] 시점이 왼쪽 칸 중앙으로 합쳐진 상태
+        // [핵심] 벡터 뭉치를 왼쪽 칸 정중앙에 배치하기 위한 오프셋 계산
         let vA = p5.Vector.sub(eA, sA);
         let vB = p5.Vector.sub(eB, sB);
-        drawArrow(centerLeft, p5.Vector.add(centerLeft, vA), color(255, 100, 100), "A");
-        drawArrow(centerLeft, p5.Vector.add(centerLeft, vB), color(100, 100, 255), "B");
+        let vSum = p5.Vector.add(vA, vB);
+        let vSub = p5.Vector.sub(vA, vB);
+
+        // 결과 벡터까지 포함한 모든 끝점 중 가장 먼 곳을 찾아 중앙 정렬
+        let pts = [createVector(0,0), vA, vB];
+        if (mode === 'ADD') pts.push(vSum);
+        if (mode === 'SUB') pts.push(vSub);
+
+        let minX = min(pts.map(p => p.x));
+        let maxX = max(pts.map(p => p.x));
+        let minY = min(pts.map(p => p.y));
+        let maxY = max(pts.map(p => p.y));
+
+        let groupWidth = maxX - minX;
+        let groupHeight = maxY - minY;
+        let visualCenter = createVector(width/4 - (minX + groupWidth/2), height/2 - (minY + groupHeight/2));
+
+        drawArrow(visualCenter, p5.Vector.add(visualCenter, vA), color(255, 100, 100), "A");
+        drawArrow(visualCenter, p5.Vector.add(visualCenter, vB), color(100, 100, 255), "B");
         
-        // 조작이 완료(Snap)되면 결과 벡터도 왼쪽 칸에 표시
         if (isSnapped) {
-            if (mode === 'ADD') drawArrow(centerLeft, p5.Vector.add(centerLeft, p5.Vector.add(vA, vB)), color(200, 0, 255), "A+B");
-            if (mode === 'SUB') drawArrow(centerLeft, p5.Vector.add(centerLeft, p5.Vector.sub(vA, vB)), color(0, 200, 100), "A-B");
+            if (mode === 'ADD') drawArrow(visualCenter, p5.Vector.add(visualCenter, vSum), color(200, 0, 255), "A+B");
+            if (mode === 'SUB') drawArrow(visualCenter, p5.Vector.add(visualCenter, vSub), color(0, 200, 100), "A-B");
         }
     }
 }
 
 function renderRightPanel() {
-    push();
-    let centerRight = createVector(width*0.75, height/2);
+    let centerR = createVector(width*0.75, height/2);
     let vA = p5.Vector.sub(eA, sA);
     let vB = p5.Vector.sub(eB, sB);
 
-    if (mode === 'ADD') {
-        // B는 고정, A를 드래그해서 B의 끝에 붙이기
-        let fixedB_E = p5.Vector.add(centerRight, vB);
-        drawArrow(centerRight, fixedB_E, color(100, 100, 255, 150), "B");
-        
-        if (dist(mS.x, mS.y, fixedB_E.x, fixedB_E.y) < 25) {
-            mS.set(fixedB_E.x, fixedB_E.y); mE = p5.Vector.add(mS, vA);
+    if (mode === 'ADD' || mode === 'SUB') {
+        let targetPoint = p5.Vector.add(centerR, vB); // B의 종점 (목표)
+        drawArrow(centerR, targetPoint, color(100, 100, 255, 150), "B");
+
+        // 목표 지점 깜빡이는 점
+        let blink = abs(sin(frameCount * 0.1)) * 255;
+        fill(255, 255, 0, blink); noStroke();
+        ellipse(targetPoint.x, targetPoint.y, 15, 15);
+
+        // A의 시점 점
+        fill(255, 100, 100);
+        ellipse(mS.x, mS.y, 10, 10);
+
+        // 자석 효과
+        if (dist(mS.x, mS.y, targetPoint.x, targetPoint.y) < 25) {
+            mS.set(targetPoint.x, targetPoint.y);
+            mE = p5.Vector.add(mS, vA);
             isSnapped = true;
-            drawArrow(centerRight, mE, color(200, 0, 255), "A+B 완성");
+            if (mode === 'ADD') drawArrow(centerR, mE, color(200, 0, 255), "A+B 완성");
+            else {
+                let minusB_E = p5.Vector.add(mS, p5.Vector.sub(centerR, targetPoint));
+                drawArrow(mS, minusB_E, color(100, 100, 255), "-B");
+            }
         }
-        drawArrow(mS, mE, color(255, 100, 100), "A 이동");
+        drawArrow(mS, mE, color(255, 100, 100), "A");
     } 
-    else if (mode === 'SUB') {
-        // A-B 과정을 위해 A를 B의 끝으로 이동
-        let fixedB_E = p5.Vector.add(centerRight, vB);
-        drawArrow(centerRight, fixedB_E, color(100, 100, 255, 150), "B");
-        
-        if (dist(mS.x, mS.y, fixedB_E.x, fixedB_E.y) < 25) {
-            mS.set(fixedB_E.x, fixedB_E.y); mE = p5.Vector.add(mS, vA);
-            isSnapped = true;
-            // -B 시각화
-            let minusB_E = p5.Vector.add(mS, p5.Vector.sub(centerRight, fixedB_E));
-            drawArrow(mS, minusB_E, color(100, 100, 255), "-B");
-        }
-        drawArrow(mS, mE, color(255, 100, 100), "A 이동");
-    }
     else if (mode === 'DOT') {
-        drawArrow(centerRight, p5.Vector.add(centerRight, vA), color(255, 100, 100), "A");
-        drawArrow(centerRight, p5.Vector.add(centerRight, vB), color(100, 100, 255), "B");
-        drawDotProcess(centerRight, p5.Vector.add(centerRight, vA), p5.Vector.add(centerRight, vB));
+        drawArrow(centerR, p5.Vector.add(centerR, vA), color(255, 100, 100), "A");
+        drawArrow(centerR, p5.Vector.add(centerR, vB), color(100, 100, 255), "B");
+        drawDotProcess(centerR, p5.Vector.add(centerR, vA), p5.Vector.add(centerR, vB));
         isSnapped = true;
     }
-    pop();
 }
 
-function drawDotProcess(orig, tA, tB) {
-    let vecB = p5.Vector.sub(tB, orig);
-    let vecA = p5.Vector.sub(tA, orig);
-    let projMag = vecA.dot(vecB.copy().normalize());
-    let projVec = vecB.copy().normalize().mult(projMag);
-    let pPoint = p5.Vector.add(orig, projVec);
-
-    stroke(255, 150); drawingContext.setLineDash([5, 5]);
-    line(tA.x, tA.y, pPoint.x, pPoint.y);
-    drawingContext.setLineDash([]);
-    fill(255, 165, 0); text("평행크기: " + round(projMag/10), pPoint.x, pPoint.y + 25);
-    fill(0, 255, 0); text("수직: 0", (tA.x + pPoint.x)/2 + 30, (tA.y + pPoint.y)/2);
+function drawNextButton() {
+    let bx = width/4 - 50;
+    let by = height - 60;
+    fill(40, 180, 100);
+    rect(bx, by, 100, 40, 5);
+    fill(255); textSize(16);
+    text("다음 단계", width/4, height - 40);
+    if (mouseX > bx && mouseX < bx+100 && mouseY > by && mouseY < by+40) cursor(HAND);
+    else cursor(ARROW);
 }
 
-// --- 마우스 제어: 왼쪽 칸으로 제한 ---
+function nextStep() {
+    step = 1;
+    // A의 초기 위치를 오른쪽 칸 적절한 곳에 배치
+    mS = createVector(width*0.6, height*0.7);
+    mE = p5.Vector.add(mS, p5.Vector.sub(eA, sA));
+}
+
+// --- 마우스 제어 ---
 function mousePressed() {
     if (mode === 'NONE') return;
 
-    if (step === 0) {
-        // 왼쪽 칸(0 ~ 500) 안에서만 시작점 생성 가능
-        if (mouseX < width/2) {
-            if (!sA) { sA = createVector(mouseX, mouseY); eA = createVector(mouseX, mouseY); }
-            else if (eA && !sB) { sB = createVector(mouseX, mouseY); eB = createVector(mouseX, mouseY); }
+    // 다음 버튼 클릭 체크
+    if (step === 0 && eA && eB) {
+        if (mouseX > width/4 - 50 && mouseX < width/4 + 50 && mouseY > height - 60 && mouseY < height - 20) {
+            nextStep();
+            return;
         }
+    }
+
+    if (step === 0 && mouseX < width/2) {
+        if (!sA) { sA = createVector(mouseX, mouseY); eA = createVector(mouseX, mouseY); }
+        else if (!sB) { sB = createVector(mouseX, mouseY); eB = createVector(mouseX, mouseY); }
     } else if (step === 1 && mS) {
-        // 오른쪽 칸 조작
         if (dist(mouseX, mouseY, mS.x, mS.y) < 40) isDragging = true;
     }
 }
 
 function mouseDragged() {
     if (step === 0) {
-        // 그릴 때 마우스가 오른쪽으로 넘어가도 좌표를 중앙선(500)에 고정
-        let constrainedX = constrain(mouseX, 0, width/2 - 10);
-        if (sA && !sB) eA.set(constrainedX, mouseY);
-        else if (sB) eB.set(constrainedX, mouseY);
+        let cx = constrain(mouseX, 10, width/2 - 10);
+        if (sA && !sB) eA.set(cx, mouseY);
+        else if (sB) eB.set(cx, mouseY);
     } else if (isDragging) {
-        let dx = mouseX - pmouseX; let dy = mouseY - pmouseY;
-        mS.add(dx, dy); mE.add(dx, dy);
+        // [가이드] 오른쪽 칸 내에서만 움직이게 제한
+        let dx = mouseX - pmouseX;
+        let dy = mouseY - pmouseY;
+        let nextS = p5.Vector.add(mS, createVector(dx, dy));
+        
+        if (nextS.x > width/2 + 20 && nextS.x < width - 20) {
+            mS.add(dx, dy); mE.add(dx, dy);
+        }
     }
 }
 
-function mouseReleased() {
-    isDragging = false;
-    if (step === 0 && eA && eB && dist(sB.x, sB.y, eB.x, eB.y) > 5) {
-        document.getElementById('next-btn').style.display = 'block';
-    }
-}
-
-function nextStep() {
-    step = 1;
-    // 조작용 벡터 초기 위치 설정 (오른쪽 칸 어딘가)
-    mS = createVector(width*0.6, height*0.7);
-    mE = p5.Vector.add(mS, p5.Vector.sub(eA, sA));
-    document.getElementById('next-btn').style.display = 'none';
-}
+function mouseReleased() { isDragging = false; }
 
 function resetAll() {
     sA = eA = sB = eB = mS = mE = null;
     step = 0; isSnapped = false; isDragging = false;
-    document.getElementById('next-btn').style.display = 'none';
 }
 
-function setMode(m) {
-    resetAll(); mode = m;
-    document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
-    if(document.getElementById('btn-'+m)) document.getElementById('btn-'+m).classList.add('active');
-}
+function setMode(m) { resetAll(); mode = m; }
 
 function drawArrow(v1, v2, c, label) {
     stroke(c); fill(c); strokeWeight(3);
@@ -175,4 +182,17 @@ function drawArrow(v1, v2, c, label) {
     push(); translate(v2.x, v2.y); rotate(angle);
     line(0,0,12,-5); line(0,0,12,5); pop();
     noStroke(); text(label + " (" + round(dist(v1.x,v1.y,v2.x,v2.y)/10) + ")", (v1.x+v2.x)/2, (v1.y+v2.y)/2 - 15);
+}
+
+function drawDotProcess(orig, tA, tB) {
+    let vA = p5.Vector.sub(tA, orig);
+    let vB = p5.Vector.sub(tB, orig);
+    let projMag = vA.dot(vB.copy().normalize());
+    let projVec = vB.copy().normalize().mult(projMag);
+    let pPoint = p5.Vector.add(orig, projVec);
+    stroke(255, 100); drawingContext.setLineDash([5, 5]);
+    line(tA.x, tA.y, pPoint.x, pPoint.y);
+    drawingContext.setLineDash([]);
+    fill(255, 165, 0); text("평행: " + round(projMag/10), pPoint.x, pPoint.y + 25);
+    fill(0, 255, 0); text("수직: 0", (tA.x + pPoint.x)/2 + 30, (tA.y + pPoint.y)/2);
 }
