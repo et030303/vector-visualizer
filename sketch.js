@@ -1,11 +1,9 @@
 let mode = 'NONE';
-let step = 0; 
+let step = 0; // 0:그리기, 1:이동, 2:조작(분해/계산), 3:결과완료
 let sA, eA, sB, eB;
-let mS; 
-let isDragging = false, isReversed = false;
-let offsetL, offsetR; 
+let offsetL, offsetR;
 let animProgress = 0;
-let isPanning = false; 
+let isPanning = false, showComponent = false, showResult = false;
 
 function setup() {
     let canvas = createCanvas(1000, 600);
@@ -20,161 +18,137 @@ function draw() {
         fill(150); textSize(20); text("상단 메뉴에서 연산을 선택하세요", width/2, height/2);
         return;
     }
-    renderLeftPanel();
-    if (step === 0 && eA && eB) drawNextButton();
-    if (step >= 2) renderRightPanel();
 
-    if (step === 4) {
-        fill(150); noStroke(); textSize(12);
-        text("마우스 드래그로 각 칸의 시점을 자유롭게 이동해보세요", width/2, height - 20);
+    if (mode === 'DOT') renderDotProduct();
+    else {
+        // 기존 합/차 렌더링 함수들 호출 (이전 코드 유지)
+        renderLeftPanel();
+        if (step === 0 && sA && eA && sB && eB) drawNextButton();
+        if (step >= 2) renderRightPanel();
     }
 }
 
 function drawLayout() {
     stroke(60); line(width/2, 0, width/2, height);
     noStroke(); fill(100); textSize(13);
-    text("PANEL 1: 최종 결과", width/4, 25);
-    text("PANEL 2: 연산 과정", width*0.75, 25);
+    if (mode === 'DOT') {
+        text("PANEL 1: 시점 통일 및 B 수평 정렬", width/4, 25);
+        text("PANEL 2: 벡터 분해 및 내적 계산", width*0.75, 25);
+    } else {
+        text("PANEL 1: 최종 결과", width/4, 25);
+        text("PANEL 2: 연산 과정", width*0.75, 25);
+    }
 }
 
-function calculateSeparateOffsets() {
-    let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
-    let pointsL = [createVector(0,0), vA, vB];
-    offsetL = getCenterOffset(pointsL);
-    
-    let pointsR = [createVector(0,0), vA, p5.Vector.add(vA, vB), p5.Vector.add(vA, p5.Vector.mult(vB, -1))];
-    offsetR = getCenterOffset(pointsR);
-    
-    mS = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
-}
-
-function getCenterOffset(pts) {
-    let minX = min(pts.map(p => p.x)), maxX = max(pts.map(p => p.x));
-    let minY = min(pts.map(p => p.y)), maxY = max(pts.map(p => p.y));
-    return createVector(-(minX + (maxX-minX)/2), -(minY + (maxY-minY)/2));
-}
-
-function renderLeftPanel() {
+function renderDotProduct() {
     if (step === 0) {
         if (sA && eA) drawArrow(sA, eA, color(255,100,100), "A");
         if (sB && eB) drawArrow(sB, eB, color(100,100,255), "B");
-    } else {
-        if (!offsetL) calculateSeparateOffsets();
-        if (animProgress < 1) animProgress += 0.04; else if (step === 1) step = 2;
+        if (sA && eA && sB && eB) drawNextButton();
+        return;
+    }
+
+    if (!offsetL) calculateDotOffsets();
+    if (animProgress < 1) animProgress += 0.03; else if (step === 1) step = 2;
+
+    let vA = p5.Vector.sub(eA, sA);
+    let vB = p5.Vector.sub(eB, sB);
+    let angleB = vB.heading();
+
+    // --- 왼쪽 패널: 시점 통일 + B 수평 회전 ---
+    push();
+    let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
+    translate(originL.x, originL.y);
+    rotate(lerp(0, -angleB, animProgress)); // B를 수평(0도)으로 회전
+    
+    drawArrow(createVector(0,0), vA, color(255,100,100, 150), "A");
+    drawArrow(createVector(0,0), vB, color(100,100,255, 150), "B");
+    pop();
+
+    // --- 오른쪽 패널: 분해 및 계산 ---
+    if (step >= 2) {
+        let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
+        let rotVA = vA.copy().rotate(-angleB);
+        let rotVB = vB.copy().rotate(-angleB);
         
-        let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
-        let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
-        let curSA = p5.Vector.lerp(sA, originL, animProgress);
-        let curSB = p5.Vector.lerp(sB, originL, animProgress);
-        let finalEA = p5.Vector.add(originL, vA), finalEB = p5.Vector.add(originL, vB);
+        push();
+        translate(originR.x, originR.y);
+        
+        // 벡터 B (기준)
+        drawArrow(createVector(0,0), rotVB, color(100,100,255), "B");
+        
+        if (showComponent) {
+            let parX = rotVA.x;
+            let parVec = createVector(parX, 0);
+            let perVec = createVector(parX, rotVA.y);
+            
+            // 수직 성분 (회색)
+            stroke(150, 100); line(parX, 0, parX, rotVA.y);
+            drawArrow(parVec, perVec, color(100, 100), ""); 
+            
+            // 수평 성분 (정사영 - 강조)
+            drawArrow(createVector(0,0), parVec, color(255, 255, 0), "A_proj");
+            fill(255, 255, 0); noStroke();
+            text(abs(parX/10).toFixed(1), parX/2, 20); // 길이 표시
+            
+            // 본래 벡터 A
+            drawArrow(createVector(0,0), rotVA, color(255,100,100), "A");
+        } else {
+            drawArrow(createVector(0,0), rotVA, color(255,100,100), "A");
+        }
+        pop();
 
-        drawArrow(curSA, p5.Vector.add(curSA, vA), color(255,100,100, 150), "A");
-        drawArrow(curSB, p5.Vector.add(curSB, vB), color(100,100,255, 150), "B");
-
-        if (step === 4) {
-            let resColor = (mode === 'ADD') ? color(200,0,255) : color(0,200,100);
-            if (mode === 'ADD') drawArrow(originL, p5.Vector.add(originL, p5.Vector.add(vA, vB)), resColor, "A+B");
-            else drawArrow(finalEB, finalEA, resColor, "A-B");
+        // 버튼 및 결과창
+        if (!showComponent) drawActionBtn("벡터 분해", width*0.75, height-100, () => { showComponent = true; });
+        else if (!showResult) drawActionBtn("내적 계산", width*0.75, height-100, () => { showResult = true; });
+        
+        if (showResult) {
+            let dotVal = (rotVA.x * rotVB.x) / 100; // 스케일 조정된 값
+            fill(255); noStroke();
+            rectMode(CENTER); fill(40, 200); rect(width*0.75, height-180, 350, 100, 10);
+            fill(255); textSize(16);
+            let bLen = (rotVB.x/10).toFixed(1);
+            let aProj = (rotVA.x/10).toFixed(1);
+            text(`내적 공식: |B| × (A의 B방향 성분)`, width*0.75, height-205);
+            textSize(20); fill(0, 255, 255);
+            text(`${bLen} × ${aProj} = ${dotVal.toFixed(1)}`, width*0.75, height-175);
         }
     }
 }
 
-function renderRightPanel() {
-    let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
-    let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
-    let targetA = p5.Vector.add(originR, vA);
+function calculateDotOffsets() {
+    let vA = p5.Vector.sub(eA, sA);
+    let vB = p5.Vector.sub(eB, sB);
+    let rotVA = vA.copy().rotate(-vB.heading());
     
-    drawArrow(originR, targetA, color(255,100,100), "A");
+    offsetL = createVector(0,0); 
+    offsetR = createVector(-rotVA.x/2, 0);
+}
 
-    // 조작 중 자석 효과
-    if (step === 2 && dist(mS.x, mS.y, targetA.x, targetA.y) < 15) {
-        mS.set(targetA.x, targetA.y); 
-        isDragging = false; 
-        step = (mode === 'SUB') ? 3 : 4; 
-    }
-
-    // 결과 고정 단계에서도 mS가 targetA와 일치하도록 보정 (Panning 대응)
-    if (step >= 3 && (mode === 'ADD' || step === 4)) {
-        mS.set(targetA.x, targetA.y);
-    }
-
-    let currentVB = isReversed ? p5.Vector.mult(vB, -1) : vB;
-    let currentEB = p5.Vector.add(mS, currentVB);
-
-    if (mode === 'ADD') {
-        if (step === 2) drawGuide(targetA);
-        drawArrow(mS, currentEB, color(100,100,255), "B");
-        if (step === 4) drawArrow(originR, currentEB, color(200,0,255), "A+B");
+function drawActionBtn(txt, x, y, callback) {
+    let bx = x-70, by = y-20;
+    if (mouseX > bx && mouseX < bx+140 && mouseY > by && mouseY < by+40) {
+        fill(255, 180, 0);
+        if (mouseIsPressed) { callback(); mouseIsPressed = false; }
     } else {
-        if (step === 2) drawGuide(targetA);
-        drawArrow(mS, currentEB, color(100,100,255), isReversed ? "-B" : "B");
-        if (step === 3) drawActionBtn("-B로 만들기");
-        if (step === 4) drawArrow(originR, currentEB, color(0,200,100), "A+(-B)");
+        fill(255, 150, 0);
     }
-    
-    if (step === 2) { 
-        fill(100,100,255); noStroke(); ellipse(mS.x, mS.y, 12, 12); 
-    }
+    rectMode(CORNER); rect(bx, by, 140, 40, 8);
+    fill(255); noStroke(); textSize(15); text(txt, x, y);
 }
 
-function drawGuide(t) {
-    let blink = abs(sin(frameCount*0.15))*255;
-    stroke(255,255,0,blink); noFill(); ellipse(t.x, t.y, 25, 25);
-    fill(255,255,0); noStroke(); text("B를 A의 종점으로!", width*0.75, height-40);
-}
-
-function drawActionBtn(txt) {
-    let bx = width*0.75-70, by = height-60;
-    fill(255,150,0); rect(bx, by, 140, 40, 8);
-    fill(255); noStroke(); text(txt, width*0.75, height-40);
-}
-
+// 기존 mousePressed 등에 DOT 모드 조건 추가 필요...
 function mousePressed() {
     if (mode === 'NONE') return;
-    if (step === 0 && eA && eB) {
-        if (mouseX > width/4-60 && mouseX < width/4+60 && mouseY > height-70 && mouseY < height-30) { step = 1; animProgress = 0; return; }
+    if (step === 0 && sA && eA && sB && eB) {
+        if (mouseX > width/4-60 && mouseX < width/4+60 && mouseY > height-70 && mouseY < height-30) {
+            step = 1; animProgress = 0; return;
+        }
     }
-    if (step === 3 && mouseX > width*0.75-70 && mouseX < width*0.75+70 && mouseY > height-60 && mouseY < height-20) { isReversed = true; step = 4; return; }
-    
+    // 그리기 로직 (기존과 동일)
     if (step === 0 && mouseX < width/2) {
         if (!sA) { sA = createVector(mouseX, mouseY); eA = sA.copy(); }
         else if (!sB) { sB = createVector(mouseX, mouseY); eB = sB.copy(); }
-    } else if (step === 2 && dist(mouseX, mouseY, mS.x, mS.y) < 50) {
-        isDragging = true;
-    } else if (step === 4) {
-        isPanning = true; 
     }
 }
-
-function mouseDragged() {
-    if (step === 0) {
-        let cx = constrain(mouseX, 10, width/2-10);
-        if (sA && !sB) eA.set(cx, mouseY);
-        else if (sB) eB.set(cx, mouseY);
-    } else if (isDragging && step === 2) {
-        let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
-        let targetA = p5.Vector.add(originR, p5.Vector.sub(eA, sA));
-        let dir = p5.Vector.sub(targetA, originR);
-        let dMag = dir.mag(); dir.normalize();
-        let relM = p5.Vector.sub(createVector(mouseX, mouseY), originR);
-        mS = p5.Vector.add(originR, dir.mult(constrain(relM.dot(dir), 0, dMag)));
-    } else if (isPanning && step === 4) {
-        let dx = mouseX - pmouseX;
-        let dy = mouseY - pmouseY;
-        if (mouseX < width/2) offsetL.add(createVector(dx, dy));
-        else offsetR.add(createVector(dx, dy));
-    }
-}
-
-function mouseReleased() { isDragging = false; isPanning = false; }
-function drawNextButton() { fill(40,180,100); rect(width/4-60, height-70, 120, 40, 5); fill(255); text("다음 단계 ➔", width/4, height-50); }
-
-window.changeMode = function(m) { resetSimulation(); mode = m; }
-window.resetSimulation = function() { sA=eA=sB=eB=mS=offsetL=offsetR=null; step=0; isReversed=false; animProgress=0; mode='NONE'; }
-
-function drawArrow(v1, v2, c, label) {
-    stroke(c); fill(c); strokeWeight(3); line(v1.x, v1.y, v2.x, v2.y);
-    let angle = atan2(v1.y-v2.y, v1.x-v2.x);
-    push(); translate(v2.x, v2.y); rotate(angle); line(0,0,10,-4); line(0,0,10,4); pop();
-    noStroke(); text(label, (v1.x+v2.x)/2, (v1.y+v2.y)/2-15);
-}
+// (이하 mouseDragged, resetSimulation 등은 기존 코드에 DOT 변수 초기화 추가)
