@@ -1,10 +1,11 @@
 let mode = 'NONE';
-let step = 0; // 0: 그리기, 1: 모이는 애니메이션, 2: 조작
+let step = 0; // 0: 그리기, 1: 모이는 애니메이션, 2: 조작, 3: 방향전환 대기, 4: 결과완료
 let sA, eA, sB, eB;
 let mS, mE; 
 let isDragging = false, isSnapped = false;
 let groupOffset;
 let animProgress = 0; 
+let isReversed = false; // 벡터 A의 방향 전환 여부
 
 function setup() {
     let canvas = createCanvas(1000, 600);
@@ -32,15 +33,12 @@ function drawLayout() {
     line(width/2, 0, width/2, height);
     noStroke(); fill(100); textSize(13);
     text("PANEL 1: 시점 통합 및 결과", width/4, 25);
-    text("PANEL 2: 벡터 이동 조작", width*0.75, 25);
+    text("PANEL 2: 벡터 조작 과정", width*0.75, 25);
 }
 
-// 뭉치가 칸 밖으로 나가지 않게 최적의 시점 좌표 계산
 function calculateBalanceOffset() {
     let vA = p5.Vector.sub(eA, sA);
     let vB = p5.Vector.sub(eB, sB);
-    
-    // 0,0에서 시작했을 때의 모든 관련 점들을 모음
     let points = [createVector(0,0), vA, vB];
     if (mode === 'ADD') points.push(p5.Vector.add(vA, vB));
     if (mode === 'SUB') points.push(p5.Vector.sub(vA, vB));
@@ -50,16 +48,9 @@ function calculateBalanceOffset() {
     let minY = min(points.map(p => p.y));
     let maxY = max(points.map(p => p.y));
 
-    let groupW = maxX - minX;
-    let groupH = maxY - minY;
-
-    // 뭉치 전체의 중심이 칸 중앙(width/4, height/2)에 오도록 원점 오프셋 설정
-    groupOffset = createVector(
-        - (minX + groupW / 2),
-        - (minY + groupH / 2)
-    );
+    groupOffset = createVector(-(minX + (maxX-minX)/2), -(minY + (maxY-minY)/2));
     
-    // 조작용 A의 시작 위치를 시점 통합 상태의 원점으로 초기화
+    // 조작용 A의 시작 위치를 B의 시작점(시점 통합) 위치로 초기화
     mS = createVector(width * 0.75 + groupOffset.x, height / 2 + groupOffset.y);
 }
 
@@ -69,8 +60,6 @@ function renderLeftPanel() {
         if (sB && eB) drawArrow(sB, eB, color(100, 100, 255), "B");
     } else {
         if (!groupOffset) calculateBalanceOffset();
-        
-        // 부드러운 이동 애니메이션
         if (animProgress < 1) animProgress += 0.04; 
         else if (step === 1) step = 2;
 
@@ -84,7 +73,8 @@ function renderLeftPanel() {
         drawArrow(curSB, p5.Vector.add(curSB, vB), color(100, 100, 255, 150), "B");
         drawArrow(curSA, p5.Vector.add(curSA, vA), color(255, 100, 100, 150), "A");
 
-        if (isSnapped) {
+        // 결과 표시 (합은 즉시, 차는 모든 과정 완료 후)
+        if (isSnapped && (mode === 'ADD' || step === 4)) {
             let resVec = (mode === 'ADD') ? p5.Vector.add(vA, vB) : p5.Vector.sub(vA, vB);
             let resColor = (mode === 'ADD') ? color(200, 0, 255) : color(0, 200, 100);
             drawArrow(targetOrigin, p5.Vector.add(targetOrigin, resVec), resColor, "결과");
@@ -100,53 +90,87 @@ function renderRightPanel() {
 
     drawArrow(originR, targetB, color(100, 100, 255), "B");
 
-    if (mode === 'ADD' || mode === 'SUB') {
-        if (!isSnapped) {
-            let blink = abs(sin(frameCount * 0.1)) * 255;
-            stroke(255, 255, 0, blink); noFill();
-            ellipse(targetB.x, targetB.y, 20, 20); 
-            fill(255, 200, 0); noStroke(); text("A를 B의 끝으로 드래그하세요", width*0.75, height - 40);
-        }
-
-        // 종점 도달 체크 및 고정
-        if (!isSnapped && dist(mS.x, mS.y, targetB.x, targetB.y) < 15) {
-            mS.set(targetB.x, targetB.y);
-            isSnapped = true;
-        }
-
-        let currentAE = p5.Vector.add(mS, vA);
-        drawArrow(mS, currentAE, color(255, 100, 100), "A");
-        if(!isSnapped) { fill(255, 100, 100); ellipse(mS.x, mS.y, 10, 10); }
-
-        if (isSnapped) {
-            let resColor = (mode === 'ADD') ? color(200, 0, 255) : color(0, 200, 100);
-            if (mode === 'ADD') {
-                drawArrow(originR, currentAE, resColor, "A+B (합)");
-            } else {
-                let minusB_E = p5.Vector.add(mS, p5.Vector.sub(originR, targetB));
-                drawArrow(mS, minusB_E, color(100, 100, 255, 180), "-B");
-                drawArrow(originR, currentAE, resColor, "A-B (차)");
-            }
-        }
-    } else if (mode === 'DOT') {
-        drawArrow(originR, p5.Vector.add(originR, vA), color(255, 100, 100), "A");
-        drawDotProcess(originR, p5.Vector.add(originR, vA), targetB);
-        isSnapped = true;
+    if (mode === 'ADD') {
+        // [합 로직] - 기존 유지
+        handleVectorAdd(originR, targetB, vA);
+    } else if (mode === 'SUB') {
+        // [차 로직] - 새로운 단계형 로직
+        handleVectorSub(originR, targetB, vA, vB);
     }
+}
+
+// 기존 완벽한 합 로직
+function handleVectorAdd(orig, target, vA) {
+    if (!isSnapped) {
+        let blink = abs(sin(frameCount * 0.1)) * 255;
+        stroke(255, 255, 0, blink); noFill(); ellipse(target.x, target.y, 20, 20);
+        fill(255, 200, 0); noStroke(); text("A를 B의 끝으로 드래그하세요", width*0.75, height - 40);
+        if (dist(mS.x, mS.y, target.x, target.y) < 15) { mS.set(target.x, target.y); isSnapped = true; }
+    }
+    let currentAE = p5.Vector.add(mS, vA);
+    drawArrow(mS, currentAE, color(255, 100, 100), "A");
+    if(!isSnapped) { fill(255, 100, 100); ellipse(mS.x, mS.y, 10, 10); }
+    else { drawArrow(orig, currentAE, color(200, 0, 255), "A+B (합)"); }
+}
+
+// 설계하신 새로운 차 로직
+function handleVectorSub(orig, targetB, vA, vB) {
+    if (step === 2) {
+        // 1단계: A를 B의 시점으로 이동 (이미 mS가 시점으로 초기화됨)
+        fill(255, 200, 0); noStroke(); text("A의 시점이 B와 일치되었습니다.", width*0.75, height - 80);
+        drawReverseButton(); // 방향전환 버튼 등장
+    }
+    
+    // 방향 전환 처리
+    let currentVA = isReversed ? p5.Vector.mult(vA, -1) : vA;
+    let currentLabel = isReversed ? "-A" : "A";
+    let currentAE = p5.Vector.add(orig, currentVA);
+
+    drawArrow(orig, currentAE, color(255, 100, 100), currentLabel);
+
+    if (step === 4) {
+        // 마지막 결과 벡터 (B의 끝에서 A의 끝으로)
+        drawArrow(targetB, currentAE, color(0, 200, 100), "B→A (A-B)");
+        fill(255, 255, 0); noStroke(); text("차 벡터(A-B)가 완성되었습니다!", width*0.75, height - 40);
+    }
+}
+
+function drawReverseButton() {
+    let bx = width*0.75 - 70, by = height - 60;
+    fill(255, 150, 0); rect(bx, by, 140, 40, 5);
+    fill(255); textSize(14); 
+    text(isReversed ? "결과 확인" : "방향 전환 (-)", width*0.75, height - 40);
 }
 
 function mousePressed() {
     if (mode === 'NONE') return;
+    
+    // 다음 단계 버튼
     if (step === 0 && eA && eB) {
         let bx = width/4 - 60, by = height - 70;
         if (mouseX > bx && mouseX < bx+120 && mouseY > by && mouseY < by+40) {
             step = 1; animProgress = 0; return;
         }
     }
+    
+    // 차 모드 전용 버튼 클릭
+    if (mode === 'SUB' && step >= 2) {
+        let bx = width*0.75 - 70, by = height - 60;
+        if (mouseX > bx && mouseX < bx+140 && mouseY > by && mouseY < by+40) {
+            if (!isReversed) {
+                isReversed = true;
+            } else {
+                step = 4; // 결과 확인
+                isSnapped = true;
+            }
+            return;
+        }
+    }
+
     if (step === 0 && mouseX < width/2) {
         if (!sA) { sA = createVector(mouseX, mouseY); eA = sA.copy(); }
         else if (!sB) { sB = createVector(mouseX, mouseY); eB = sB.copy(); }
-    } else if (step === 2 && !isSnapped) {
+    } else if (mode === 'ADD' && step === 2 && !isSnapped) {
         if (dist(mouseX, mouseY, mS.x, mS.y) < 50) isDragging = true;
     }
 }
@@ -156,17 +180,14 @@ function mouseDragged() {
         let cx = constrain(mouseX, 10, width/2 - 10);
         if (sA && !sB) eA.set(cx, mouseY);
         else if (sB) eB.set(cx, mouseY);
-    } else if (isDragging && !isSnapped) {
-        // B 벡터 선상으로만 이동 제한 (Projection)
+    } else if (mode === 'ADD' && isDragging && !isSnapped) {
         let originR = createVector(width*0.75 + groupOffset.x, height/2 + groupOffset.y);
         let targetR = p5.Vector.add(originR, p5.Vector.sub(eB, sB));
         let dir = p5.Vector.sub(targetR, originR);
         let dMag = dir.mag();
         dir.normalize();
-        
         let relMouse = p5.Vector.sub(createVector(mouseX, mouseY), originR);
-        let sp = relMouse.dot(dir);
-        sp = constrain(sp, 0, dMag); 
+        let sp = constrain(relMouse.dot(dir), 0, dMag); 
         mS = p5.Vector.add(originR, dir.mult(sp));
     }
 }
@@ -180,10 +201,9 @@ function drawNextButton() {
 }
 
 window.changeMode = function(m) { 
-    sA=eA=sB=eB=mS=groupOffset=null; step=0; isSnapped=false; animProgress=0; mode = m; 
+    sA=eA=sB=eB=mS=groupOffset=null; step=0; isSnapped=false; 
+    animProgress=0; isReversed=false; mode = m; 
 }
-
-function resetAll() { window.changeMode('NONE'); }
 
 function drawArrow(v1, v2, c, label) {
     stroke(c); fill(c); strokeWeight(3);
@@ -192,16 +212,4 @@ function drawArrow(v1, v2, c, label) {
     push(); translate(v2.x, v2.y); rotate(angle);
     line(0,0,10,-4); line(0,0,10,4); pop();
     noStroke(); text(label, (v1.x+v2.x)/2, (v1.y+v2.y)/2-15);
-}
-
-function drawDotProcess(orig, tA, tB) {
-    let vA = p5.Vector.sub(tA, orig);
-    let vB = p5.Vector.sub(tB, orig);
-    let projMag = vA.dot(vB.copy().normalize());
-    let projVec = vB.copy().normalize().mult(projMag);
-    let pPoint = p5.Vector.add(orig, projVec);
-    stroke(255, 100); drawingContext.setLineDash([5, 5]);
-    line(tA.x, tA.y, pPoint.x, pPoint.y);
-    drawingContext.setLineDash([]);
-    fill(255, 165, 0); text("내적 성분", pPoint.x, pPoint.y + 25);
 }
