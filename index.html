@@ -2,44 +2,110 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>Vector Master</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vector Visualizer by ET</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <script src="sketch.js"></script>
     <style>
-        body { margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; background: #1a1a1a; color: white; font-family: sans-serif; }
-        #menu { padding: 15px; display: flex; gap: 10px; background: #2a2a2a; width: 100%; justify-content: center; border-bottom: 2px solid #333; }
-        button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 5px; background: #444; color: white; font-weight: bold; transition: 0.2s; }
-        button:hover { background: #555; }
-        button.active { background: #007bff; }
-        #reset-btn { background: #dc3545; }
-        #canvas-container { margin-top: 20px; border: 1px solid #444; border-radius: 8px; overflow: hidden; }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            overflow: hidden; /* 스크롤 방지 */
+        }
+
+        /* 상단 컨트롤 패널 */
+        #controls {
+            position: relative;
+            display: flex;
+            justify-content: center; /* 버튼들을 가로 중앙에 배치 */
+            align-items: center;
+            height: 70px;
+            background: #252525;
+            border-bottom: 2px solid #333;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
+
+        /* 중앙 버튼 그룹 */
+        .button-group {
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background: #444;
+            color: white;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        button:hover {
+            background: #555;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        button:active {
+            transform: translateY(1px);
+        }
+
+        /* 버튼별 강조 색상 */
+        button[onclick*="ADD"] { background: #3b5bdb; }
+        button[onclick*="SUB"] { background: #e03131; }
+        button[onclick*="DOT"] { background: #099268; }
+        button[onclick*="reset"] { background: #495057; }
+
+        /* 오른쪽 끝 "by ET" 서명 */
+        .signature {
+            position: absolute;
+            right: 30px;
+            color: rgba(255, 255, 255, 0.25);
+            font-size: 13px;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            pointer-events: none; /* 마우스 이벤트 방해 금지 */
+            user-select: none;
+        }
+
+        /* 캔버스 영역 */
+        #canvas-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: calc(100vh - 70px);
+            background-color: #1a1a1a;
+        }
+
+        canvas {
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body>
 
-<div id="menu">
-    <button onclick="setMode('ADD', this)">A+B</button>
-    <button onclick="setMode('SUB', this)">A-B</button>
-    <button onclick="setMode('DOT', this)">A·B</button>
-    <button onclick="resetAll()" id="reset-btn">리셋</button>
-    <span style="margin-left: auto; color: rgba(255,255,255,0.4); font-size: 14px; font-weight: bold; letter-spacing: 1px;">by ET</span>
-</div>
+    <div id="controls">
+        <div class="button-group">
+            <button onclick="changeMode('ADD')">벡터의 합 (A + B)</button>
+            <button onclick="changeMode('SUB')">벡터의 차 (A - B)</button>
+            <button onclick="changeMode('DOT')">벡터의 내적 (A · B)</button>
+            <button onclick="resetSimulation()">리셋</button>
+        </div>
 
-<div id="canvas-container"></div>
+        <div class="signature">by ET</div>
+    </div>
 
-<script src="sketch.js"></script>
-<script>
-    function setMode(mode, btn) {
-        const buttons = document.querySelectorAll('#menu button');
-        buttons.forEach(b => b.classList.remove('active'));
-        if (btn) btn.classList.add('active');
-        if (window.changeMode) window.changeMode(mode);
-    }
-    function resetAll() {
-        const buttons = document.querySelectorAll('#menu button');
-        buttons.forEach(b => b.classList.remove('active'));
-        if (window.resetSimulation) window.resetSimulation();
-    }
-</script>
+    <div id="canvas-container">
+        </div>
+
 </body>
 </html>
-
