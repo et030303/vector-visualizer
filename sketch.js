@@ -13,7 +13,7 @@ function setup() {
 }
 
 function draw() {
-    background(20);
+    background(25);
     drawLayout();
 
     if (mode === 'NONE') {
@@ -31,13 +31,16 @@ function drawLayout() {
     stroke(60); strokeWeight(1);
     line(width/2, 0, width/2, height);
     noStroke(); fill(100); textSize(13);
-    text("PANEL 1: 최종 결과", width/4, 25);
-    text("PANEL 2: 벡터 조작 (B 경로 이동)", width*0.75, 25);
+    text("PANEL 1: 시점 통합 및 결과", width/4, 25);
+    text("PANEL 2: 벡터 이동 조작", width*0.75, 25);
 }
 
+// 뭉치가 칸 밖으로 나가지 않게 최적의 시점 좌표 계산
 function calculateBalanceOffset() {
     let vA = p5.Vector.sub(eA, sA);
     let vB = p5.Vector.sub(eB, sB);
+    
+    // 0,0에서 시작했을 때의 모든 관련 점들을 모음
     let points = [createVector(0,0), vA, vB];
     if (mode === 'ADD') points.push(p5.Vector.add(vA, vB));
     if (mode === 'SUB') points.push(p5.Vector.sub(vA, vB));
@@ -47,10 +50,17 @@ function calculateBalanceOffset() {
     let minY = min(points.map(p => p.y));
     let maxY = max(points.map(p => p.y));
 
-    groupOffset = createVector(-(minX + (maxX-minX)/2), -(minY + (maxY-minY)/2));
+    let groupW = maxX - minX;
+    let groupH = maxY - minY;
+
+    // 뭉치 전체의 중심이 칸 중앙(width/4, height/2)에 오도록 원점 오프셋 설정
+    groupOffset = createVector(
+        - (minX + groupW / 2),
+        - (minY + groupH / 2)
+    );
     
-    // 조작용 A의 시작 위치 초기화
-    mS = createVector(width*0.75 + groupOffset.x, height/2 + groupOffset.y);
+    // 조작용 A의 시작 위치를 시점 통합 상태의 원점으로 초기화
+    mS = createVector(width * 0.75 + groupOffset.x, height / 2 + groupOffset.y);
 }
 
 function renderLeftPanel() {
@@ -60,7 +70,7 @@ function renderLeftPanel() {
     } else {
         if (!groupOffset) calculateBalanceOffset();
         
-        // 애니메이션 진행
+        // 부드러운 이동 애니메이션
         if (animProgress < 1) animProgress += 0.04; 
         else if (step === 1) step = 2;
 
@@ -68,7 +78,6 @@ function renderLeftPanel() {
         let vA = p5.Vector.sub(eA, sA);
         let vB = p5.Vector.sub(eB, sB);
 
-        // 시점 이동 애니메이션 (원래 위치 -> 중앙)
         let curSA = p5.Vector.lerp(sA, targetOrigin, animProgress);
         let curSB = p5.Vector.lerp(sB, targetOrigin, animProgress);
 
@@ -96,10 +105,10 @@ function renderRightPanel() {
             let blink = abs(sin(frameCount * 0.1)) * 255;
             stroke(255, 255, 0, blink); noFill();
             ellipse(targetB.x, targetB.y, 20, 20); 
-            fill(255, 200, 0); noStroke(); text("A를 B의 끝으로 미끄러뜨리세요", width*0.75, height - 40);
+            fill(255, 200, 0); noStroke(); text("A를 B의 끝으로 드래그하세요", width*0.75, height - 40);
         }
 
-        // 자석 고정
+        // 종점 도달 체크 및 고정
         if (!isSnapped && dist(mS.x, mS.y, targetB.x, targetB.y) < 15) {
             mS.set(targetB.x, targetB.y);
             isSnapped = true;
@@ -107,12 +116,13 @@ function renderRightPanel() {
 
         let currentAE = p5.Vector.add(mS, vA);
         drawArrow(mS, currentAE, color(255, 100, 100), "A");
-        fill(255, 100, 100); ellipse(mS.x, mS.y, 10, 10); 
+        if(!isSnapped) { fill(255, 100, 100); ellipse(mS.x, mS.y, 10, 10); }
 
         if (isSnapped) {
             let resColor = (mode === 'ADD') ? color(200, 0, 255) : color(0, 200, 100);
-            if (mode === 'ADD') drawArrow(originR, currentAE, resColor, "A+B (합)");
-            else {
+            if (mode === 'ADD') {
+                drawArrow(originR, currentAE, resColor, "A+B (합)");
+            } else {
                 let minusB_E = p5.Vector.add(mS, p5.Vector.sub(originR, targetB));
                 drawArrow(mS, minusB_E, color(100, 100, 255, 180), "-B");
                 drawArrow(originR, currentAE, resColor, "A-B (차)");
@@ -147,7 +157,7 @@ function mouseDragged() {
         if (sA && !sB) eA.set(cx, mouseY);
         else if (sB) eB.set(cx, mouseY);
     } else if (isDragging && !isSnapped) {
-        // B 벡터 선상으로만 이동 제한
+        // B 벡터 선상으로만 이동 제한 (Projection)
         let originR = createVector(width*0.75 + groupOffset.x, height/2 + groupOffset.y);
         let targetR = p5.Vector.add(originR, p5.Vector.sub(eB, sB));
         let dir = p5.Vector.sub(targetR, originR);
@@ -162,6 +172,7 @@ function mouseDragged() {
 }
 
 function mouseReleased() { isDragging = false; }
+
 function drawNextButton() {
     let bx = width/4 - 60, by = height - 70;
     fill(40, 180, 100); rect(bx, by, 120, 40, 5);
@@ -171,6 +182,8 @@ function drawNextButton() {
 window.changeMode = function(m) { 
     sA=eA=sB=eB=mS=groupOffset=null; step=0; isSnapped=false; animProgress=0; mode = m; 
 }
+
+function resetAll() { window.changeMode('NONE'); }
 
 function drawArrow(v1, v2, c, label) {
     stroke(c); fill(c); strokeWeight(3);
@@ -190,5 +203,5 @@ function drawDotProcess(orig, tA, tB) {
     stroke(255, 100); drawingContext.setLineDash([5, 5]);
     line(tA.x, tA.y, pPoint.x, pPoint.y);
     drawingContext.setLineDash([]);
-    fill(255, 165, 0); text("평행성분", pPoint.x, pPoint.y + 25);
+    fill(255, 165, 0); text("내적 성분", pPoint.x, pPoint.y + 25);
 }
