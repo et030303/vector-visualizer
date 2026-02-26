@@ -31,12 +31,12 @@ function draw() {
 
     if (step === 0) {
         if (sA && eA && sB && eB) drawNextButton();
-        else { fill(200, 150, 0); noStroke(); text("왼쪽 칸에 벡터를 그려주세요 (휠: 확대/축소, 완료 후 드래그: 이동)", width/2, height - 30); }
+        else { fill(200, 150, 0); noStroke(); text("벡터를 그려주세요 (완료 후 드래그로 시점 이동 가능)", width/2, height - 30); }
     }
 }
 
 function drawLayout() {
-    stroke(60); strokeWeight(1); line(width/2, 0, width/2, height);
+    stroke(60); line(width/2, 0, width/2, height);
     noStroke(); fill(100); textSize(13);
     text(mode === 'DOT' ? "PANEL 1: 시점 통일 및 회전" : "PANEL 1: 최종 결과", width/4, 25);
     text(mode === 'DOT' ? "PANEL 2: 성분 분해 및 계산" : "PANEL 2: 연산 과정", width*0.75, 25);
@@ -50,6 +50,7 @@ function mouseWheel(event) {
     return false;
 }
 
+// --- [합 / 차] 왼쪽 패널 ---
 function renderLeftPanel() {
     if (step === 0) {
         if (sA && eA) drawArrow(sA, eA, color(255,100,100), "A");
@@ -63,20 +64,28 @@ function renderLeftPanel() {
         let curSB = p5.Vector.lerp(sB, originL, animProgress);
 
         push(); translate(originL.x, originL.y); scale(zoom); translate(-originL.x, -originL.y);
+        
+        // 평행사변형 가이드 (합 모드 step 4일 때)
+        if (mode === 'ADD' && step === 4) {
+            stroke(255, 100); strokeWeight(1); drawingContext.setLineDash([5, 5]);
+            line(originL.x + vA.x, originL.y + vA.y, originL.x + vA.x + vB.x, originL.y + vA.y + vB.y);
+            line(originL.x + vB.x, originL.y + vB.y, originL.x + vA.x + vB.x, originL.y + vA.y + vB.y);
+            drawingContext.setLineDash([]);
+        }
+
         drawArrow(curSA, p5.Vector.add(curSA, vA), color(255,100,100, 150), "A");
         drawArrow(curSB, p5.Vector.add(curSB, vB), color(100,100,255, 150), "B");
-        pop();
 
         if (step === 4) {
             let resColor = (mode === 'ADD') ? color(200,0,255) : color(0,200,100);
-            push(); translate(originL.x, originL.y); scale(zoom); translate(-originL.x, -originL.y);
             if (mode === 'ADD') drawArrow(originL, p5.Vector.add(originL, p5.Vector.add(vA, vB)), resColor, "A+B");
             else drawArrow(p5.Vector.add(originL, vB), p5.Vector.add(originL, vA), resColor, "A-B");
-            pop();
         }
+        pop();
     }
 }
 
+// --- [합 / 차] 오른쪽 패널 ---
 function renderRightPanel() {
     if (!offsetR) return;
     let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
@@ -101,6 +110,7 @@ function renderRightPanel() {
     pop();
 }
 
+// --- [내적] 렌더링 ---
 function renderDotProduct() {
     if (step === 0) {
         if (sA && eA) drawArrow(sA, eA, color(255,100,100), "A");
@@ -109,27 +119,32 @@ function renderDotProduct() {
     }
     if (!offsetL) calculateOffsets();
     let vA = p5.Vector.sub(eA, sA), vB = p5.Vector.sub(eB, sB);
-    let theta = vA.heading() - vB.heading();
     let angleB = vB.heading();
+    let angleA = vA.heading();
+    let theta = angleA - angleB;
 
-    // Panel 1
+    // Panel 1: 왼쪽 (각도 정확도 개선)
     push();
     let originL = createVector(width/4 + offsetL.x, height/2 + offsetL.y);
     translate(originL.x, originL.y);
     scale(zoom);
-    rotate(lerp(0, -angleB, animProgress));
-    // 회전 후 시점(0,0)은 고정, 벡터만 렌더링
+    rotate(lerp(0, -angleB, animProgress)); // B를 바닥으로 돌리는 애니메이션
+    
     drawArrow(createVector(0,0), vA, color(255,100,100, 150), "A");
     drawArrow(createVector(0,0), vB, color(100,100,255, 150), "B");
+    
     if (animProgress >= 0.99) {
-        noFill(); stroke(255, 180); arc(0, 0, 50, 50, min(0, theta), max(0, theta));
-        fill(255); noStroke(); text("θ", 35 * cos(theta/2), 35 * sin(theta/2));
+        noFill(); stroke(255, 180); strokeWeight(1.5);
+        // 벡터 사이의 사잇각을 arc로 표현
+        arc(0, 0, 50, 50, min(0, theta), max(0, theta));
+        fill(255); noStroke(); 
+        text("θ", 40 * cos(theta/2), 40 * sin(theta/2));
     }
     pop();
 
     if (animProgress < 1) animProgress += 0.02; else if (step === 1) step = 2;
 
-    // Panel 2
+    // Panel 2: 오른쪽
     if (step >= 2) {
         let originR = createVector(width*0.75 + offsetR.x, height/2 + offsetR.y);
         let rotVA = vA.copy().rotate(-angleB);
@@ -139,7 +154,8 @@ function renderDotProduct() {
         fill(120, 120, 255); noStroke(); text(`|B|=${(vB.mag()/10).toFixed(1)}`, rotVB.x / 2, 25);
         if (showComponent) {
             let A2 = createVector(rotVA.x, 0), A1 = createVector(0, rotVA.y); 
-            stroke(255, 50); line(rotVA.x, 0, rotVA.x, rotVA.y);
+            stroke(255, 80); drawingContext.setLineDash([4, 4]); line(rotVA.x, 0, rotVA.x, rotVA.y);
+            drawingContext.setLineDash([]);
             drawArrow(createVector(0,0), A1, color(150), "A1", -20); 
             drawArrow(createVector(0,0), A2, color(255, 255, 0), "A2", 20);
             fill(255, 255, 0); noStroke(); text((abs(rotVA.x)/10).toFixed(1), A2.x/2, 15);
@@ -170,7 +186,7 @@ function calculateOffsets() {
         let rotVB = vB.copy().rotate(-vB.heading());
         offsetR = createVector(-(rotVA.x + rotVB.x) / 4, -rotVA.y / 2);
     } else {
-        let ptsL = [createVector(0,0), vA, vB];
+        let ptsL = [createVector(0,0), vA, vB, p5.Vector.add(vA, vB)];
         offsetL = getCenterOffset(ptsL);
         let ptsR = [createVector(0,0), vA, p5.Vector.add(vA, vB)];
         offsetR = getCenterOffset(ptsR);
@@ -196,7 +212,7 @@ function mousePressed() {
         let vA = p5.Vector.sub(eA, sA);
         let currentMS = p5.Vector.lerp(originR, p5.Vector.add(originR, vA), mSPercent);
         if (dist(mouseX, mouseY, currentMS.x, currentMS.y) < 50) isDragging = true;
-    } else if (step === 4) isPanning = true;
+    } else if (step === 4 || (mode === 'DOT' && step >= 2)) isPanning = true;
 }
 
 function mouseDragged() {
@@ -208,7 +224,7 @@ function mouseDragged() {
         let vA = p5.Vector.sub(eA, sA);
         let relM = p5.Vector.sub(createVector(mouseX/zoom, mouseY/zoom), originR);
         mSPercent = constrain(relM.dot(vA.copy().normalize()) / vA.mag(), 0, 1);
-    } else if (isPanning && step === 4) {
+    } else if (isPanning) {
         let dx = mouseX - pmouseX, dy = mouseY - pmouseY;
         if (mouseX < width/2) offsetL.add(createVector(dx, dy)); else offsetR.add(createVector(dx, dy));
     }
